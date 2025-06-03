@@ -1,0 +1,155 @@
+import { getAuth } from "firebase/auth";
+import {
+    addDoc,
+    collection,
+    getDocs,
+    query,
+    where,
+    orderBy,
+    doc,
+    getDoc,
+} from "firebase/firestore";
+
+import { db } from "@/firebase/firebase-config";
+
+export const getStoriesByUser = async () => {
+    try {
+        const auth = getAuth();
+        const userId = auth.currentUser?.uid;
+        console.log("User Logging:", userId);
+
+        if (!userId) {
+            throw new Error("User not authenticated");
+        }
+
+        const storiesRef = collection(db, "stories");
+        const q = query(storiesRef, where("owner", "==", userId));
+        const querySnapshot = await getDocs(q);
+
+        const stories = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+        }));
+
+        return stories;
+    } catch (error) {
+        console.error("Error getting stories by user: ", error);
+        return [];
+    }
+};
+
+type Friend = {
+    id: string;
+    name: string;
+    avatar: string;
+};
+
+export const getFriendsByUserId = async (userId: string): Promise<Friend[]> => {
+    try {
+        const userDocRef = doc(db, "users", userId);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            const friendUids = userData["friends"] || [];
+
+            if (friendUids.length > 0) {
+                const friendsCollection = collection(db, "users");
+                const friendQuery = query(friendsCollection, where("uid", "in", friendUids));
+                const friendDocsSnap = await getDocs(friendQuery);
+
+                const friendsData = friendDocsSnap.docs.map((doc) => {
+                    const data = doc.data();
+                    return {
+                        id: data["uid"],
+                        name: data["username"] || "Unknown User",
+                        avatar:
+                            data["profilePicture"] ||
+                            "https://randomuser.me/api/portraits/lego/1.jpg",
+                    };
+                });
+                return friendsData;
+            } else {
+                return []; // No friends found
+            }
+        } else {
+            console.log("User document not found.");
+            return [];
+        }
+    } catch (error) {
+        console.error("Error fetching friends:", error);
+        return [];
+    }
+};
+
+type Message = {
+    id: string;
+    text: string;
+    type: "question" | "answer";
+    answered?: boolean;
+    speaker: string;
+};
+
+export const getMessagesByConversationId = async (conversationId: string): Promise<Message[]> => {
+    try {
+        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        const q = query(messagesRef, orderBy("message_time"));
+        const querySnapshot = await getDocs(q);
+        const messages = querySnapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                text: data["speech"],
+                type: data["speaker"] === "bot" ? "question" : "answer",
+                speaker: data["speaker"],
+            };
+        });
+        console.log("messages", messages);
+        return messages as Message[];
+    } catch (error) {
+        console.error("Error getting messages by conversation ID: ", error);
+        return [];
+    }
+};
+
+export const CreateNewStories_WITHBOT = async (
+    messages: Message[],
+    userId: string,
+    title: string,
+) => {
+    try {
+        // 1. Tạo conversation mới
+        const conversationRef = await addDoc(collection(db, "conversations"), {
+            conversation_start_date: new Date(),
+            participants: [userId, "bot"],
+        });
+
+        // 2. Tạo subcollection "messages" trong conversation
+        const messagesRef = collection(db, "conversations", conversationRef.id, "messages");
+
+        // 3. Lưu từng message vào subcollection
+        messages.forEach(async (msg) => {
+            await addDoc(messagesRef, {
+                message_time: new Date().toISOString(),
+                speaker: msg.speaker,
+                speech: msg.text,
+            });
+        });
+
+        // 3. Tạo story và liên kết với conversation
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const storyRef = await addDoc(collection(db, "stories"), {
+            conversation_id: conversationRef.id,
+            owner: userId,
+            related_users: [userId, "bot"],
+            processing: 0, // hoặc 100 nếu đã xong
+            title,
+            story_generated_date: "",
+            story_recited_date: "",
+        });
+
+        console.log("Conversation và messages và stories đã được tạo.");
+    } catch (error) {
+        console.error("Lỗi khi tạo stories:", error);
+    }
+};
