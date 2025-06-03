@@ -1,6 +1,6 @@
 /* eslint-disable import/no-duplicates */
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { getAuth } from "firebase/auth";
 import { useState, useRef, useEffect } from "react";
 import React from "react";
@@ -23,7 +23,6 @@ export default function ChatDetail() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const scrollViewRef = useRef<ScrollView>(null);
-    console.log("ConverID", id);
 
     useEffect(() => {
         if (!id || typeof id !== "string") {
@@ -43,8 +42,6 @@ export default function ChatDetail() {
                 setIsLoading(false);
             }
         };
-
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         fetchMessages();
     }, [id]); // Refetch messages if conversationId changes
 

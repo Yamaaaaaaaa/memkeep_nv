@@ -38,11 +38,11 @@ export default function HomeScreen() {
                             navigateTo="/(tabs)/mystories"
                         />
                         <MenuButton
-                            title="Contact List"
+                            title="Stories from Friends and Family"
                             icon={<Ionicons name="people-outline" size={24} color="#fff" />}
                             backgroundColor="#2C3E50"
                             textColor="#fff"
-                            navigateTo="/(tabs)/setting"
+                            navigateTo="/(tabs)/friend-stories"
                         />
                         <MenuButton
                             title="Profile"
