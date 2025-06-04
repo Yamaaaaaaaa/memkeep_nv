@@ -109,7 +109,7 @@ export const getMessagesByConversationId = async (conversationId: string): Promi
                 speaker: data["speaker"],
             };
         });
-        console.log("messages", messages);
+        // console.log("messages", messages);
         return messages as unknown as Message[];
     } catch (error) {
         console.error("Error getting messages by conversation ID: ", error);
@@ -121,7 +121,7 @@ export const getMessagesByConversationId = async (conversationId: string): Promi
 
 export const CreateNewStories_WITHBOT = async (messages: Message[], userId: string, title: string) => {
   try {
-    console.log("Starting to create story with messages:", messages.length)
+    // console.log("Starting to create story with messages:", messages.length)
 
     // 1. Tạo conversation mới
     const conversationRef = await addDoc(collection(db, "conversations"), {
@@ -129,7 +129,7 @@ export const CreateNewStories_WITHBOT = async (messages: Message[], userId: stri
       participants: [userId, "bot"],
     })
 
-    console.log("Created conversation:", conversationRef.id)
+    // console.log("Created conversation:", conversationRef.id)
 
     // 2. Tạo subcollection "messages" trong conversation
     const messagesRef = collection(db, "conversations", conversationRef.id, "messages")
@@ -140,7 +140,7 @@ export const CreateNewStories_WITHBOT = async (messages: Message[], userId: stri
       return msg.text && msg.text.trim() !== "" && msg.answered
     })
 
-    console.log("Valid messages to save:", validMessages.length)
+    // console.log("Valid messages to save:", validMessages.length)
 
     // 4. Lưu từng message vào subcollection - sử dụng Promise.all
     const messagePromises = validMessages.map(async (msg, index) => {
@@ -150,7 +150,7 @@ export const CreateNewStories_WITHBOT = async (messages: Message[], userId: stri
         speech: msg.text,
       }
 
-      console.log(`Saving message ${index + 1}:`, messageData)
+    //   console.log(`Saving message ${index + 1}:`, messageData)
       return await addDoc(messagesRef, messageData)
     })
 
@@ -169,9 +169,9 @@ export const CreateNewStories_WITHBOT = async (messages: Message[], userId: stri
     }
 
     const storyRef = await addDoc(collection(db, "stories"), storyData)
-    console.log("Created story:", storyRef.id)
+    // console.log("Created story:", storyRef.id)
 
-    console.log("✅ Conversation, messages và stories đã được tạo thành công!")
+    // console.log("✅ Conversation, messages và stories đã được tạo thành công!")
     return {
       conversationId: conversationRef.id,
       storyId: storyRef.id,

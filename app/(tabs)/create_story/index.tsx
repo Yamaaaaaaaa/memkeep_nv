@@ -1,4 +1,4 @@
-import { MaterialIcons } from "@expo/vector-icons"
+import { Ionicons, MaterialIcons } from "@expo/vector-icons"
 import axios from "axios"
 import { LinearGradient } from "expo-linear-gradient"
 import { getAuth } from "firebase/auth"
@@ -14,10 +14,12 @@ import {
     ActivityIndicator,
     StyleSheet,
     Alert,
+    Image,
 } from "react-native"
 
 import { CreateNewStories_WITHBOT } from "@/firebase/utils/db-new"
 import { OPENAI_API_KEY } from "@/config/env"
+import { SafeAreaView } from "react-native-safe-area-context"
 
 type Message = {
     _id: string
@@ -401,164 +403,157 @@ export default function ChatAIScreen() {
     }
 
     return (
-        <>
-            <StatusBar translucent backgroundColor="#FFDCD1" barStyle="dark-content" />
-            <LinearGradient colors={["#FFDCD1", "#ECEBD0"]} style={styles.gradient}>
-                <View style={styles.container}>
-                    {/* Header Section */}
-                    <View style={styles.headerContainer}>
-                        {/* Search Bar */}
-                        <View style={styles.searchContainer}>
-                            <View style={styles.searchBar}>
-                                <MaterialIcons name="search" size={20} color="#999" />
-                                <TextInput
-                                    style={styles.searchInput}
-                                    placeholder="search for author, boy, word..."
-                                    placeholderTextColor="#999"
-                                />
-                            </View>
-                            <View style={styles.headerIcons}>
-                                <TouchableOpacity style={styles.iconButton}>
-                                    <Text style={styles.iconText}>C</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.iconButton}>
-                                    <Text style={styles.iconText}>HJ</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-
-                    {/* Content Container */}
-                    <View style={styles.contentContainer}>
-                        <TextInput style={styles.titleInput} onChangeText={setTitle} value={title} />
-
-                        <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
-                            {messages.map((message, index) => {
-                                if (message.type !== "question") return null
-
-                                const answer = messages[index + 1]
-
-                                return (
-                                    <View key={message._id} style={styles.messageContainer}>
-                                        {/* Question with bot avatar */}
-                                        <View style={styles.questionRow}>
-                                            <View style={styles.botAvatar}>
-                                                <Text style={styles.botAvatarText}>🐘</Text>
-                                            </View>
-                                            <View style={styles.questionContainer}>
-                                                <Text style={styles.questionText}>
-                                                    {message.text}
-                                                </Text>
-                                            </View>
-                                        </View>
-
-                                        {/* Action buttons */}
-                                        {answer && !answer.answered && (
-                                            <View style={styles.actionButtonsRow}>
-                                                <TouchableOpacity
-                                                    style={styles.typeOutButton}
-                                                    onPress={() => handleAnswer(answer._id, "type")}
-                                                >
-                                                    <MaterialIcons name="edit" size={16} color="#999" />
-                                                    <Text style={styles.actionButtonText}>Type out answer</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity
-                                                    style={styles.narrateButton}
-                                                    onPress={() => handleAnswer(answer._id, "speak")}
-                                                >
-                                                    <MaterialIcons name="mic" size={16} color="#999" />
-                                                    <Text style={styles.actionButtonText}>Narrate answer</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity style={styles.speakerButton}>
-                                                    <MaterialIcons name="volume-up" size={16} color="#999" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-
-                                        {/* Answer with user avatar */}
-                                        {answer && (
-                                            <View style={styles.answerRow}>
-                                                <TouchableOpacity
-                                                    onPress={() => handleAnswer(answer._id)}
-                                                    style={styles.answerContainer}
-                                                >
-                                                    <Text style={styles.answerText}>
-                                                        {answer.answered ? answer.text : ""}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                                <View style={styles.userAvatar}>
-                                                    <Text style={styles.userAvatarText}>HJ</Text>
-                                                </View>
-                                            </View>
-                                        )}
-
-                                        {/* Action buttons for answered */}
-                                        {answer && answer.answered && (
-                                            <View style={styles.actionButtonsRow}>
-                                                <TouchableOpacity
-                                                    style={styles.typeOutButton}
-                                                    onPress={() => handleAnswer(answer._id, "type")}
-                                                >
-                                                    <MaterialIcons name="edit" size={16} color="#999" />
-                                                    <Text style={styles.actionButtonText}>Type out answer</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity
-                                                    style={styles.narrateButton}
-                                                    onPress={() => handleAnswerAgain(answer._id)}
-                                                >
-                                                    <MaterialIcons name="mic" size={16} color="#999" />
-                                                    <Text style={styles.actionButtonText}>Narrate answer</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity style={styles.speakerButton}>
-                                                    <MaterialIcons name="volume-up" size={16} color="#999" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-                                    </View>
-                                )
-                            })}
-
-                            {isLoading && (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="large" color="#66621C" />
-                                    <Text style={styles.loadingText}>
-                                        {retryCount > 0 ? `Retrying... (Attempt ${retryCount})` : "AI is thinking..."}
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={styles.bottomSpace} />
-                        </ScrollView>
-
-                        <View style={styles.bottomButtonContainer}>
-                            <TouchableOpacity
-                                onPress={handleLetsStart}
-                                style={[styles.letsStartButton, isSaving && styles.disabledButton]}
-                                disabled={isSaving}
-                            >
-                                <View style={styles.letsStartButtonContent}>
-                                    {isSaving ? (
-                                        <>
-                                            <ActivityIndicator size="small" color="white" />
-                                            <Text style={styles.letsStartText}>Saving...</Text>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Text style={styles.letsStartText}>Let&apos;s start</Text>
-                                            <MaterialIcons name="arrow-forward" size={20} color="white" />
-                                        </>
-                                    )}
-                                </View>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
+        <SafeAreaView style={styles.container}>
+            {/* Friend list and All option */}
+            <LinearGradient colors={["#FEC7AD", "#C2D1E5"]} style={styles.bggradient} />
+            <Image
+                source={require("../../../assets/images/NewUI/Background1.png")}
+                style={styles.bgimage}
+                resizeMode="cover"
+                onError={(error) => console.log("ImageBackground error:", error.nativeEvent.error)}
+            />
+            {/* Header Section */}
+            <View style={styles.header}>
+                <Image source={require("../../../assets/images/NewUI/newlogo.png")} style={styles.logoIcon} resizeMode="cover" />
+                <View style={styles.searchBar}>
+                    <Text style={styles.searchText}>search for author, key word...</Text>
+                    <Ionicons name="search" size={18} color="#888" style={{ marginLeft: 15 }} />
                 </View>
-            </LinearGradient>
+                <Ionicons name="chatbubble-outline" size={24} color="#000" />
+                <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>HJ</Text>
+                </View>
+            </View>
 
+            {/* Content Container */}
+            <View style={styles.contentContainer}>
+                <TextInput style={styles.titleInput} onChangeText={setTitle} value={title} />
+
+                <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+                    {messages.map((message, index) => {
+                        if (message.type !== "question") return null
+
+                        const answer = messages[index + 1]
+
+                        return (
+                            <View key={message._id} style={styles.messageContainer}>
+                                {/* Question with bot avatar */}
+                                <View style={styles.questionRow}>
+                                    <View style={styles.botAvatar}>
+                                        <Image source={require("../../../assets/images/NewUI/Group.png")} style={styles.logoIconMini} />
+
+                                    </View>
+                                    <View style={styles.questionContainer}>
+                                        <Text style={styles.questionText}>
+                                            {message.text}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                {/* Action buttons */}
+                                {answer && !answer.answered && (
+                                    <View style={styles.actionButtonsRow}>
+                                        <TouchableOpacity
+                                            style={styles.typeOutButton}
+                                            onPress={() => handleAnswer(answer._id, "type")}
+                                        >
+                                            <MaterialIcons name="edit" size={16} color="#999" />
+                                            <Text style={styles.actionButtonText}>Type out answer</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={styles.narrateButton}
+                                            onPress={() => handleAnswer(answer._id, "speak")}
+                                        >
+                                            <MaterialIcons name="mic" size={16} color="#999" />
+                                            <Text style={styles.actionButtonText}>Narrate answer</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity style={styles.speakerButton}>
+                                            <MaterialIcons name="volume-up" size={16} color="#999" />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                {/* Answer with user avatar */}
+                                {answer && (
+                                    <View style={styles.answerRow}>
+                                        <TouchableOpacity
+                                            onPress={() => handleAnswer(answer._id)}
+                                            style={styles.answerContainer}
+                                        >
+                                            <Text style={styles.answerText}>
+                                                {answer.answered ? answer.text : ""}
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <View style={styles.userAvatar}>
+                                            <Text style={styles.userAvatarText}>HJ</Text>
+                                        </View>
+                                    </View>
+                                )}
+
+                                {/* Action buttons for answered */}
+                                {answer && answer.answered && (
+                                    <View style={styles.actionButtonsRow}>
+                                        <TouchableOpacity
+                                            style={styles.typeOutButton}
+                                            onPress={() => handleAnswer(answer._id, "type")}
+                                        >
+                                            <MaterialIcons name="edit" size={16} color="#999" />
+                                            <Text style={styles.actionButtonText}>Type out answer</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={styles.narrateButton}
+                                            onPress={() => handleAnswerAgain(answer._id)}
+                                        >
+                                            <MaterialIcons name="mic" size={16} color="#999" />
+                                            <Text style={styles.actionButtonText}>Narrate answer</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity style={styles.speakerButton}>
+                                            <MaterialIcons name="volume-up" size={16} color="#999" />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                            </View>
+                        )
+                    })}
+
+                    {isLoading && (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#66621C" />
+                            <Text style={styles.loadingText}>
+                                {retryCount > 0 ? `Retrying... (Attempt ${retryCount})` : "AI is thinking..."}
+                            </Text>
+                        </View>
+                    )}
+
+                    <View style={styles.bottomSpace} />
+                </ScrollView>
+
+                <View style={styles.bottomButtonContainer}>
+                    <TouchableOpacity
+                        onPress={handleLetsStart}
+                        style={[styles.letsStartButton, isSaving && styles.disabledButton]}
+                        disabled={isSaving}
+                    >
+                        <View style={styles.letsStartButtonContent}>
+                            {isSaving ? (
+                                <>
+                                    <ActivityIndicator size="small" color="white" />
+                                    <Text style={styles.letsStartText}>Saving...</Text>
+                                </>
+                            ) : (
+                                <>
+                                    <Text style={styles.letsStartText}>Let&apos;s start</Text>
+                                    <MaterialIcons name="arrow-forward" size={20} color="white" />
+                                </>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+                </View>
+            </View>
             <Modal animationType="slide" transparent visible={isModalVisible} onRequestClose={() => setIsModalVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContainer}>
@@ -585,28 +580,29 @@ export default function ChatAIScreen() {
                     </View>
                 </View>
             </Modal>
-        </>
+        </SafeAreaView>
     )
 }
 
 const styles = StyleSheet.create({
-    gradient: {
-        flex: 1,
-        justifyContent: "center",
-        width: "100%",
-        padding: 10,
-        paddingBottom: 20,
-    },
     container: {
-        width: "100%",
         flex: 1,
         borderWidth: 1,
         borderColor: "black",
         borderRadius: 12,
     },
+    bggradient: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 0,
+    },
+    bgimage: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 1,
+        opacity: 0.9,
+    },
     contentContainer: {
         flex: 1,
-        paddingTop: 40,
+        zIndex: 2,
     },
     titleInput: {
         fontFamily: "Albert Sans",
@@ -628,36 +624,54 @@ const styles = StyleSheet.create({
     messageContainer: {
         marginBottom: 32,
     },
-    headerContainer: {
-        backgroundColor: 'transparent',
-        paddingTop: 40,
+    header: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 20,
+        zIndex: 2,
     },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        gap: 12,
+    logoIcon: {
+        width: 50,
+        height: 50,
+        marginRight: 10,
+    },
+    logoIconMini: {
+        width: 30,
+        height: 30,
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
     },
     searchBar: {
         flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.8)',
-        borderRadius: 20,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        gap: 8,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginRight: 20,
     },
-    searchInput: {
-        flex: 1,
-        fontFamily: "Albert Sans",
+    searchText: {
+        marginLeft: 6,
+        color: "#888",
         fontSize: 14,
-        color: 'black',
     },
-    headerIcons: {
-        flexDirection: 'row',
-        gap: 8,
+    avatar: {
+        width: 30,
+        height: 30,
+        backgroundColor: "#C2644F",
+        borderRadius: 15,
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 10,
+        marginLeft: 20,
+    },
+    avatarText: {
+        color: "#fff",
+        fontSize: 12,
+        fontWeight: "bold",
     },
     iconButton: {
         width: 32,
@@ -692,16 +706,16 @@ const styles = StyleSheet.create({
     },
     questionContainer: {
         backgroundColor: '#E8F4FD',
-        borderRadius: 20,
-        borderTopLeftRadius: 8,
+        borderRadius: 10,
         padding: 16,
-        maxWidth: '75%',
+        width: "82%",
     },
     questionText: {
         fontFamily: "Albert Sans",
         fontSize: 16,
         color: "#333",
         lineHeight: 22,
+        width: "100%",
     },
     actionButtonsRow: {
         flexDirection: 'row',
@@ -737,11 +751,11 @@ const styles = StyleSheet.create({
     },
     answerContainer: {
         backgroundColor: "#F0F8FF",
-        borderRadius: 20,
-        borderBottomRightRadius: 8,
+        borderRadius: 10,
+        // borderBottomRightRadius: 8,
         padding: 16,
         minHeight: 60,
-        maxWidth: '75%',
+        width: "85%",
         justifyContent: 'center',
     },
     answerText: {
@@ -806,6 +820,7 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: "flex-end",
         backgroundColor: "rgba(0, 0, 0, 0.5)",
+        zIndex: 2,
     },
     modalContainer: {
         backgroundColor: "white",
