@@ -1,8 +1,8 @@
-import { MaterialIcons } from "@expo/vector-icons";
-import axios from "axios";
-import { LinearGradient } from "expo-linear-gradient";
-import { getAuth } from "firebase/auth";
-import React, { useState, useRef, useEffect } from "react";
+import { MaterialIcons } from "@expo/vector-icons"
+import axios from "axios"
+import { LinearGradient } from "expo-linear-gradient"
+import { getAuth } from "firebase/auth"
+import { useState, useRef, useEffect } from "react"
 import {
     View,
     Text,
@@ -13,466 +13,545 @@ import {
     Modal,
     ActivityIndicator,
     StyleSheet,
-} from "react-native";
+    Alert,
+} from "react-native"
 
-import { CreateNewStories_WITHBOT } from "@/firebase/utils/db-new";
+import { CreateNewStories_WITHBOT } from "@/firebase/utils/db-new"
+import { OPENAI_API_KEY } from "@/config/env"
 
-// Replace with your API key
-// In a real environment, you should store API keys in environment variables or use a backend
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 type Message = {
-    id: number;
-    text: string;
-    type: "question" | "answer";
-    answered: boolean;
-    speaker: string;
-};
+    _id: string
+    text: string
+    createdAt: Date
+    user: {
+        _id: string
+        name: string
+    }
+    id?: number
+    type?: "question" | "answer"
+    answered?: boolean
+    speaker?: string
+}
 
 const predefinedQuestions = [
     "What is this story about?",
     "Who are the people in this story?",
     "When did this story take place?",
     "Where did this story happen?",
-];
+    "Where did this story happen?",
+]
 
 export default function ChatAIScreen() {
-    const auth = getAuth();
-    const userId = auth.currentUser?.uid;
-    // Start with only the first question
+    const auth = getAuth()
+    const userId = auth.currentUser?.uid
+    let err: any // Declare err variable
+
     const [messages, setMessages] = useState<Message[]>([
         {
             _id: "1",
-            text: predefinedQuestions[0] + "",
+            text: predefinedQuestions[0],
             createdAt: new Date(),
             user: {
                 _id: "bot",
                 name: "AI",
             },
+            id: 1,
+            type: "question",
+            answered: true,
+            speaker: "bot",
         },
         {
             _id: "2",
             text: "",
             createdAt: new Date(),
             user: {
-                _id: userId + "",
+                _id: userId || "user",
                 name: "User",
             },
+            id: 2,
+            type: "answer",
+            answered: false,
+            speaker: "user",
         },
-    ]);
-    const [title, setTitle] = useState("New Story Title");
-    const [currentAnswer, setCurrentAnswer] = useState("");
-    const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [inputMode, setInputMode] = useState<"type" | "speak">("type");
-    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-    const [isAIMode, setIsAIMode] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [retryCount, setRetryCount] = useState(0);
-    const scrollViewRef = useRef<ScrollView>(null);
+    ])
 
-    // Scroll to bottom when new messages are added
+    const [title, setTitle] = useState("New Story Title")
+    const [currentAnswer, setCurrentAnswer] = useState("")
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+    const [isModalVisible, setIsModalVisible] = useState(false)
+    const [inputMode, setInputMode] = useState<"type" | "speak">("type")
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
+    const [isAIMode, setIsAIMode] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+    const [retryCount, setRetryCount] = useState(0)
+    const [isSaving, setIsSaving] = useState(false)
+    const scrollViewRef = useRef<ScrollView>(null)
+
+    // Debug API key
+    useEffect(() => {
+        console.log("=== API KEY DEBUG ===")
+        console.log("API Key exists:", !!OPENAI_API_KEY)
+        console.log("API Key length:", OPENAI_API_KEY?.length || 0)
+        console.log("API Key preview:", OPENAI_API_KEY?.substring(0, 20) + "...")
+
+        if (!OPENAI_API_KEY) {
+            Alert.alert("Configuration Error", "OpenAI API key not found. Please check your .env file.")
+        }
+    }, [])
+
     useEffect(() => {
         setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-    }, [messages.length]);
+            scrollViewRef.current?.scrollToEnd({ animated: true })
+        }, 100)
+    }, [messages.length])
 
-    const handleAnswer = (messageId: number, mode: "type" | "speak" = "type") => {
-        setEditingMessageId(messageId);
-        setInputMode(mode);
+    const handleAnswer = (messageId: string, mode: "type" | "speak" = "type") => {
+        setEditingMessageId(messageId)
+        setInputMode(mode)
 
         if (mode === "type") {
-            setIsModalVisible(true);
-
-            // Find the message being edited to pre-fill the input
-            const message = messages.find((m) => m._id === messageId.toString());
+            setIsModalVisible(true)
+            const message = messages.find((m) => m._id === messageId)
             if (message) {
-                setCurrentAnswer(message.text);
+                setCurrentAnswer(message.text)
             }
         } else {
-            // Handle speech input
-            // This would be implemented with a speech recognition API
-            console.log("Speech input mode activated");
-            // For now, we'll just show the modal as a placeholder
-            setIsModalVisible(true);
+            console.log("Speech input mode activated")
+            setIsModalVisible(true)
         }
-    };
+    }
 
-    // Function to call OpenAI API with retry logic
     const fetchAIQuestion = async (attemptCount = 0) => {
-        setIsLoading(true);
-        setRetryCount(attemptCount);
-        let error;
+        // Kiểm tra API key trước khi gọi API
+        if (!OPENAI_API_KEY) {
+            Alert.alert("Error", "OpenAI API key not configured")
+            return
+        }
+
+        setIsLoading(true)
+        setRetryCount(attemptCount)
 
         try {
-            // Convert messages to OpenAI API format
-            const formattedMessages = messages
-                .filter((m) => m.answered || m.user._id === "bot")
-                .map((m) => ({
-                    role: m.user._id === "bot" ? "assistant" : "user",
-                    content: m.text,
-                }));
+            const answeredMessages = messages.filter((m) => m.answered && m.text.trim() !== "")
+            const formattedMessages = answeredMessages.map((m) => ({
+                role: m.user._id === "bot" ? "assistant" : "user",
+                content: m.text,
+            }))
 
-            // Limit the number of messages to save tokens
-            const limitedMessages = formattedMessages.slice(-5);
+            const limitedMessages = formattedMessages.slice(-5)
 
-            // Add system message to guide the AI
             const systemMessage = {
                 role: "system",
                 content: `You are an AI assistant helping users tell stories. 
-        The user has answered basic questions about their story. 
-        Your task is to ask follow-up questions to help them develop their story with more details.
-        Ask short, specific, and easy-to-understand questions.
-        Only ask one question at a time.
-        Base your questions on their previous answers.
-        Don't repeat questions that have already been asked.`,
-            };
+                The user has answered basic questions about their story. 
+                Your task is to ask follow-up questions to help them develop their story with more details.
+                Ask short, specific, and easy-to-understand questions.
+                Only ask one question at a time.
+                Base your questions on their previous answers.
+                Don't repeat questions that have already been asked.`,
+            }
 
-            // Call OpenAI API
+            console.log("Making API call with key:", OPENAI_API_KEY.substring(0, 20) + "...")
+
             const response = await axios.post(
                 "https://api.openai.com/v1/chat/completions",
                 {
-                    model: "gpt-3.5-turbo", // Use gpt-3.5-turbo to save costs
+                    model: "gpt-3.5-turbo",
                     messages: [systemMessage, ...limitedMessages],
-                    max_tokens: 50, // Reduce max_tokens to save costs
+                    max_tokens: 50,
                     temperature: 0.7,
                 },
                 {
                     headers: {
                         "Content-Type": "application/json",
-                        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+                        Authorization: `Bearer ${OPENAI_API_KEY}`,
                     },
-                    timeout: 10000, // Add timeout to avoid waiting too long
+                    timeout: 10000,
                 },
-            );
+            )
 
-            // Get question from AI
-            const aiQuestion = response.data.choices[0].message.content;
+            const aiQuestion = response.data.choices[0].message.content
+            const questionId = (messages.length + 1).toString()
+            const answerId = (messages.length + 2).toString()
 
-            // Add AI question to messages
-            const newId = messages.length + 1;
-            const newMessage: Message = {
-                _id: newId.toString(),
+            const newQuestion: Message = {
+                _id: questionId,
                 text: aiQuestion,
                 createdAt: new Date(),
                 user: {
                     _id: "bot",
                     name: "AI",
                 },
-                id: newId,
-                type: "answer",
+                id: messages.length + 1,
+                type: "question",
                 answered: true,
                 speaker: "bot",
-            };
-            setMessages((prev) => [...prev, newMessage]);
-
-            // Reset retry count on success
-            setRetryCount(0);
-        } catch (e) {
-            error = e;
-            console.error("Error calling OpenAI API:", error);
-
-            // Check if it's a 429 error and we can retry
-            if (axios.isAxiosError(error) && error.response?.status === 429 && attemptCount < 5) {
-                // Calculate exponential backoff delay: 2^attemptCount * 1000ms
-                const delay = Math.pow(2, attemptCount) * 1000;
-                console.log(
-                    `Rate limited. Retrying in ${delay / 1000} seconds... (Attempt ${attemptCount + 1})`,
-                );
-
-                // Wait before retrying
-                setTimeout(() => {
-                    fetchAIQuestion(attemptCount + 1);
-                }, delay);
-                return;
             }
 
-            // If we can't retry or max retries reached, show error message
+            const newAnswer: Message = {
+                _id: answerId,
+                text: "",
+                createdAt: new Date(),
+                user: {
+                    _id: userId || "user",
+                    name: "User",
+                },
+                id: messages.length + 2,
+                type: "answer",
+                answered: false,
+                speaker: "user",
+            }
+
+            setMessages((prev) => [...prev, newQuestion, newAnswer])
+            setRetryCount(0)
+        } catch (error: any) {
+            err = error // Assign error to err variable
+            console.error("Error calling OpenAI API:", err)
+
+            // Log chi tiết lỗi
+            if (err.response) {
+                console.log("Error status:", err.response.status)
+                console.log("Error data:", err.response.data)
+            }
+
+            if (axios.isAxiosError(err) && err.response?.status === 429 && attemptCount < 5) {
+                const delay = Math.pow(2, attemptCount) * 1000
+                console.log(`Rate limited. Retrying in ${delay / 1000} seconds... (Attempt ${attemptCount + 1})`)
+
+                setTimeout(() => {
+                    fetchAIQuestion(attemptCount + 1)
+                }, delay)
+                return
+            }
+
             if (attemptCount >= 5) {
-                // After max retries, add a message indicating the issue
-                const newId = messages.length + 1;
+                const errorId = (messages.length + 1).toString()
                 const errorMessage: Message = {
-                    _id: newId.toString(),
+                    _id: errorId,
                     text: "I'm having trouble connecting. Please try again later.",
                     createdAt: new Date(),
                     user: {
                         _id: "bot",
                         name: "AI",
                     },
-                    id: newId,
-                    type: "answer",
+                    id: messages.length + 1,
+                    type: "question",
                     answered: true,
                     speaker: "bot",
-                };
-                setMessages((prev) => [...prev, errorMessage]);
+                }
+                setMessages((prev) => [...prev, errorMessage])
             }
         } finally {
-            // Only set loading to false if we're not retrying
-            if (retryCount >= 5 || !axios.isAxiosError(error) || error.response?.status !== 429) {
-                setIsLoading(false);
+            if (retryCount >= 5 || !axios.isAxiosError(err) || err?.response?.status !== 429) {
+                setIsLoading(false)
             }
         }
-    };
+    }
 
     const saveAnswer = async () => {
         if (currentAnswer.trim() && editingMessageId) {
-            // Update the answer
-            setMessages(prev => {
-                const updatedMessages = prev.map(msg =>
-                    msg._id === editingMessageId.toString()
-                        ? { ...msg, text: currentAnswer, answered: true } as any
-                        : msg
-                );
+            setMessages((prev) =>
+                prev.map((msg) => (msg._id === editingMessageId ? { ...msg, text: currentAnswer, answered: true } : msg)),
+            )
 
-                // Create the new answer message (adjusting type)
-                const newMessage: Message = {
-                    _id: editingMessageId.toString(),
-                    text: currentAnswer,
-                    createdAt: new Date() as any,
-                    user: { _id: "bot", name: "AI" } as any,
-                    id: parseInt(editingMessageId.toString(), 10),
-                    type: "answer",
-                    answered: true,
-                    speaker: "bot",
-                };
+            setIsModalVisible(false)
+            setCurrentAnswer("")
+            setEditingMessageId(null)
 
-                return [...updatedMessages, newMessage];
-            });
-
-            setIsModalVisible(false);
-            setCurrentAnswer("");
-            setEditingMessageId(null);
-
-            // Check if we're in predefined questions mode or AI mode
             if (!isAIMode) {
-                // Check if we need to add the next predefined question
-                const nextQuestionIndex = currentQuestionIndex + 1;
+                const nextQuestionIndex = currentQuestionIndex + 1
                 if (nextQuestionIndex < predefinedQuestions.length) {
-                    // Add the next question and its answer placeholder after a short delay
                     setTimeout(() => {
-                        const newId = messages.length + 1;
+                        const questionId = (messages.length + 1).toString()
+                        const answerId = (messages.length + 2).toString()
+
                         const newQuestion: Message = {
-                            _id: newId.toString(),
+                            _id: questionId,
                             text: predefinedQuestions[nextQuestionIndex],
                             createdAt: new Date(),
                             user: {
                                 _id: "bot",
                                 name: "AI",
                             },
-                            id: newId,
+                            id: messages.length + 1,
                             type: "question",
-                            answered: false,
+                            answered: true,
                             speaker: "bot",
-                        };
-                        setMessages((prev) => [...prev, newQuestion]);
-                        setCurrentQuestionIndex(nextQuestionIndex);
-                    }, 500);
+                        }
+
+                        const newAnswer: Message = {
+                            _id: answerId,
+                            text: "",
+                            createdAt: new Date(),
+                            user: {
+                                _id: userId || "user",
+                                name: "User",
+                            },
+                            id: messages.length + 2,
+                            type: "answer",
+                            answered: false,
+                            speaker: "user",
+                        }
+
+                        setMessages((prev) => [...prev, newQuestion, newAnswer])
+                        setCurrentQuestionIndex(nextQuestionIndex)
+                    }, 500)
                 } else {
-                    // We've finished the predefined questions, switch to AI mode
-                    setIsAIMode(true);
-                    // Get the first AI question
+                    setIsAIMode(true)
                     setTimeout(() => {
-                        fetchAIQuestion();
-                    }, 1000);
+                        fetchAIQuestion()
+                    }, 1000)
                 }
             } else {
-                // We're in AI mode, get the next AI question
                 setTimeout(() => {
-                    fetchAIQuestion();
-                }, 1000);
+                    fetchAIQuestion()
+                }, 1000)
             }
         }
-    };
+    }
 
-    const handleAnswerAgain = (messageId: number) => {
-        handleAnswer(messageId);
-    };
+    const handleAnswerAgain = (messageId: string) => {
+        handleAnswer(messageId)
+    }
 
     const handleLetsStart = async () => {
-        await CreateNewStories_WITHBOT(messages, userId + "", title);
+        if (!userId) {
+            Alert.alert("Error", "Please login first")
+            return
+        }
 
-        console.log("Let's start pressed");
-        // navigation.push("/choose-share-route");
-    };
+        setIsSaving(true)
+        try {
+            const result = await CreateNewStories_WITHBOT(messages, userId, title)
+            console.log("Story created successfully:", result)
+            Alert.alert(
+                "Success",
+                `Story created successfully!\nConversation ID: ${result.conversationId}\nMessages saved: ${result.messageCount}`,
+                [
+                    {
+                        text: "OK",
+                        onPress: () => {
+                            // navigation.push("/choose-share-route");
+                        },
+                    },
+                ],
+            )
+        } catch (error) {
+            console.error("Error creating story:", error)
+            Alert.alert("Error", "Failed to create story. Please try again.")
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    const handleSkip = (messageId: string) => {
+        setMessages((prev) =>
+            prev.map((msg) => (msg._id === messageId ? { ...msg, text: "Skipped", answered: true } : msg)),
+        )
+
+        if (!isAIMode) {
+            const nextQuestionIndex = currentQuestionIndex + 1
+            if (nextQuestionIndex < predefinedQuestions.length) {
+                setTimeout(() => {
+                    const questionId = (messages.length + 1).toString()
+                    const answerId = (messages.length + 2).toString()
+
+                    const newQuestion: Message = {
+                        _id: questionId,
+                        text: predefinedQuestions[nextQuestionIndex],
+                        createdAt: new Date(),
+                        user: {
+                            _id: "bot",
+                            name: "AI",
+                        },
+                        id: messages.length + 1,
+                        type: "question",
+                        answered: true,
+                        speaker: "bot",
+                    }
+
+                    const newAnswer: Message = {
+                        _id: answerId,
+                        text: "",
+                        createdAt: new Date(),
+                        user: {
+                            _id: userId || "user",
+                            name: "User",
+                        },
+                        id: messages.length + 2,
+                        type: "answer",
+                        answered: false,
+                        speaker: "user",
+                    }
+
+                    setMessages((prev) => [...prev, newQuestion, newAnswer])
+                    setCurrentQuestionIndex(nextQuestionIndex)
+                }, 500)
+            } else {
+                setIsAIMode(true)
+                setTimeout(() => {
+                    fetchAIQuestion()
+                }, 1000)
+            }
+        } else {
+            setTimeout(() => {
+                fetchAIQuestion()
+            }, 1000)
+        }
+    }
 
     return (
         <>
             <StatusBar translucent backgroundColor="#FFDCD1" barStyle="dark-content" />
             <LinearGradient colors={["#FFDCD1", "#ECEBD0"]} style={styles.gradient}>
-                {/* Outer border */}
                 <View style={styles.container}>
+                    {/* Header Section */}
+                    <View style={styles.headerContainer}>
+                        {/* Search Bar */}
+                        <View style={styles.searchContainer}>
+                            <View style={styles.searchBar}>
+                                <MaterialIcons name="search" size={20} color="#999" />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="search for author, boy, word..."
+                                    placeholderTextColor="#999"
+                                />
+                            </View>
+                            <View style={styles.headerIcons}>
+                                <TouchableOpacity style={styles.iconButton}>
+                                    <Text style={styles.iconText}>C</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.iconButton}>
+                                    <Text style={styles.iconText}>HJ</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Content Container */}
                     <View style={styles.contentContainer}>
-                        {/* Header */}
-                        <TextInput
-                            style={styles.titleInput}
-                            onChangeText={setTitle}
-                            value={title}
-                        />
+                        <TextInput style={styles.titleInput} onChangeText={setTitle} value={title} />
 
-                        {/* Messages ScrollView */}
-                        <ScrollView
-                            ref={scrollViewRef}
-                            style={styles.scrollView}
-                            contentContainerStyle={styles.scrollViewContent}
-                        >
+                        <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
                             {messages.map((message, index) => {
-                                // Skip rendering answers directly, they'll be handled with their questions
-                                if (message.user._id === "bot") return null;
+                                if (message.type !== "question") return null
 
-                                // Find the corresponding answer for this question
-                                const answer = messages[index + 1];
+                                const answer = messages[index + 1]
 
                                 return (
                                     <View key={message._id} style={styles.messageContainer}>
-                                        {/* Question */}
-                                        <View style={styles.questionContainer}>
-                                            <Text style={styles.questionText}>
-                                                {isAIMode && index >= predefinedQuestions.length * 2
-                                                    ? "AI: "
-                                                    : ""}
-                                                {message.text}
-                                            </Text>
+                                        {/* Question with bot avatar */}
+                                        <View style={styles.questionRow}>
+                                            <View style={styles.botAvatar}>
+                                                <Text style={styles.botAvatarText}>🐘</Text>
+                                            </View>
+                                            <View style={styles.questionContainer}>
+                                                <Text style={styles.questionText}>
+                                                    {message.text}
+                                                </Text>
+                                            </View>
                                         </View>
 
-                                        {/* Answer */}
+                                        {/* Action buttons */}
+                                        {answer && !answer.answered && (
+                                            <View style={styles.actionButtonsRow}>
+                                                <TouchableOpacity
+                                                    style={styles.typeOutButton}
+                                                    onPress={() => handleAnswer(answer._id, "type")}
+                                                >
+                                                    <MaterialIcons name="edit" size={16} color="#999" />
+                                                    <Text style={styles.actionButtonText}>Type out answer</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    style={styles.narrateButton}
+                                                    onPress={() => handleAnswer(answer._id, "speak")}
+                                                >
+                                                    <MaterialIcons name="mic" size={16} color="#999" />
+                                                    <Text style={styles.actionButtonText}>Narrate answer</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity style={styles.speakerButton}>
+                                                    <MaterialIcons name="volume-up" size={16} color="#999" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+
+                                        {/* Answer with user avatar */}
                                         {answer && (
-                                            <View style={styles.answerWrapper}>
+                                            <View style={styles.answerRow}>
                                                 <TouchableOpacity
                                                     onPress={() => handleAnswer(answer._id)}
                                                     style={styles.answerContainer}
                                                 >
                                                     <Text style={styles.answerText}>
-                                                        {answer.answered ? answer.text : "Answer"}
+                                                        {answer.answered ? answer.text : ""}
                                                     </Text>
                                                 </TouchableOpacity>
+                                                <View style={styles.userAvatar}>
+                                                    <Text style={styles.userAvatarText}>HJ</Text>
+                                                </View>
+                                            </View>
+                                        )}
 
-                                                {answer.answered ? (
-                                                    <View style={styles.answerAgainContainer}>
-                                                        <TouchableOpacity
-                                                            onPress={() =>
-                                                                handleAnswerAgain(answer._id)
-                                                            }
-                                                            style={styles.answerAgainButton}
-                                                        >
-                                                            <Text style={styles.answerAgainText}>
-                                                                Answer again
-                                                            </Text>
-                                                            <MaterialIcons
-                                                                name="refresh"
-                                                                size={16}
-                                                                color="black"
-                                                            />
-                                                        </TouchableOpacity>
-                                                    </View>
-                                                ) : (
-                                                    <>
-                                                        <View style={styles.actionButtonsContainer}>
-                                                            <TouchableOpacity
-                                                                style={styles.typeButton}
-                                                                onPress={() =>
-                                                                    handleAnswer(answer._id, "type")
-                                                                }
-                                                            >
-                                                                <Text
-                                                                    style={styles.actionButtonText}
-                                                                >
-                                                                    Type
-                                                                </Text>
-                                                                <MaterialIcons
-                                                                    name="edit"
-                                                                    size={20}
-                                                                    color="black"
-                                                                />
-                                                            </TouchableOpacity>
+                                        {/* Action buttons for answered */}
+                                        {answer && answer.answered && (
+                                            <View style={styles.actionButtonsRow}>
+                                                <TouchableOpacity
+                                                    style={styles.typeOutButton}
+                                                    onPress={() => handleAnswer(answer._id, "type")}
+                                                >
+                                                    <MaterialIcons name="edit" size={16} color="#999" />
+                                                    <Text style={styles.actionButtonText}>Type out answer</Text>
+                                                </TouchableOpacity>
 
-                                                            <TouchableOpacity
-                                                                style={styles.speakButton}
-                                                                onPress={() =>
-                                                                    handleAnswer(answer._id, "speak")
-                                                                }
-                                                            >
-                                                                <Text
-                                                                    style={styles.actionButtonText}
-                                                                >
-                                                                    Speak
-                                                                </Text>
-                                                                <MaterialIcons
-                                                                    name="mic"
-                                                                    size={20}
-                                                                    color="black"
-                                                                />
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                        <View style={styles.actionButtonsContainer}>
-                                                            <TouchableOpacity
-                                                                style={styles.eraseButton}
-                                                                onPress={() =>
-                                                                    handleAnswer(answer._id, "type")
-                                                                }
-                                                            >
-                                                                <Text
-                                                                    style={styles.actionButtonText}
-                                                                >
-                                                                    Erase
-                                                                </Text>
-                                                                <MaterialIcons
-                                                                    name="edit"
-                                                                    size={20}
-                                                                    color="black"
-                                                                />
-                                                            </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={styles.narrateButton}
+                                                    onPress={() => handleAnswerAgain(answer._id)}
+                                                >
+                                                    <MaterialIcons name="mic" size={16} color="#999" />
+                                                    <Text style={styles.actionButtonText}>Narrate answer</Text>
+                                                </TouchableOpacity>
 
-                                                            <TouchableOpacity
-                                                                style={styles.nextButton}
-                                                                onPress={() =>
-                                                                    handleAnswer(answer._id, "speak")
-                                                                }
-                                                            >
-                                                                <Text
-                                                                    style={styles.actionButtonText}
-                                                                >
-                                                                    Next
-                                                                </Text>
-                                                                <MaterialIcons
-                                                                    name="mic"
-                                                                    size={20}
-                                                                    color="black"
-                                                                />
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                    </>
-                                                )}
+                                                <TouchableOpacity style={styles.speakerButton}>
+                                                    <MaterialIcons name="volume-up" size={16} color="#999" />
+                                                </TouchableOpacity>
                                             </View>
                                         )}
                                     </View>
-                                );
+                                )
                             })}
 
-                            {/* Loading indicator for AI response */}
                             {isLoading && (
                                 <View style={styles.loadingContainer}>
                                     <ActivityIndicator size="large" color="#66621C" />
                                     <Text style={styles.loadingText}>
-                                        {retryCount > 0
-                                            ? `Retrying... (Attempt ${retryCount})`
-                                            : "AI is thinking..."}
+                                        {retryCount > 0 ? `Retrying... (Attempt ${retryCount})` : "AI is thinking..."}
                                     </Text>
                                 </View>
                             )}
 
-                            {/* Add some extra space at the bottom of the ScrollView */}
                             <View style={styles.bottomSpace} />
                         </ScrollView>
 
-                        {/* Bottom Button - Fixed at bottom */}
                         <View style={styles.bottomButtonContainer}>
                             <TouchableOpacity
                                 onPress={handleLetsStart}
-                                style={styles.letsStartButton}
+                                style={[styles.letsStartButton, isSaving && styles.disabledButton]}
+                                disabled={isSaving}
                             >
                                 <View style={styles.letsStartButtonContent}>
-                                    <Text style={styles.letsStartText}>Let's start</Text>
-                                    <MaterialIcons name="arrow-forward" size={20} color="white" />
+                                    {isSaving ? (
+                                        <>
+                                            <ActivityIndicator size="small" color="white" />
+                                            <Text style={styles.letsStartText}>Saving...</Text>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Text style={styles.letsStartText}>Let&apos;s start</Text>
+                                            <MaterialIcons name="arrow-forward" size={20} color="white" />
+                                        </>
+                                    )}
                                 </View>
                             </TouchableOpacity>
                         </View>
@@ -480,26 +559,14 @@ export default function ChatAIScreen() {
                 </View>
             </LinearGradient>
 
-            {/* Answer Input Modal */}
-            <Modal
-                animationType="slide"
-                transparent
-                visible={isModalVisible}
-                onRequestClose={() => setIsModalVisible(false)}
-            >
+            <Modal animationType="slide" transparent visible={isModalVisible} onRequestClose={() => setIsModalVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContainer}>
-                        <Text style={styles.modalTitle}>
-                            {inputMode === "type" ? "Type your answer" : "Speak your answer"}
-                        </Text>
+                        <Text style={styles.modalTitle}>{inputMode === "type" ? "Type your answer" : "Speak your answer"}</Text>
 
                         <TextInput
                             style={styles.modalInput}
-                            placeholder={
-                                inputMode === "type"
-                                    ? "Type your answer here..."
-                                    : "Speak or type your answer..."
-                            }
+                            placeholder={inputMode === "type" ? "Type your answer here..." : "Speak or type your answer..."}
                             value={currentAnswer}
                             onChangeText={setCurrentAnswer}
                             multiline
@@ -507,10 +574,7 @@ export default function ChatAIScreen() {
                         />
 
                         <View style={styles.modalButtonsContainer}>
-                            <TouchableOpacity
-                                onPress={() => setIsModalVisible(false)}
-                                style={styles.cancelButton}
-                            >
+                            <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.cancelButton}>
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
 
@@ -522,7 +586,7 @@ export default function ChatAIScreen() {
                 </View>
             </Modal>
         </>
-    );
+    )
 }
 
 const styles = StyleSheet.create({
@@ -562,105 +626,142 @@ const styles = StyleSheet.create({
         flexGrow: 1,
     },
     messageContainer: {
-        marginBottom: 40,
+        marginBottom: 32,
+    },
+    headerContainer: {
+        backgroundColor: 'transparent',
+        paddingTop: 40,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        gap: 12,
+    },
+    searchBar: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        borderRadius: 20,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        fontFamily: "Albert Sans",
+        fontSize: 14,
+        color: 'black',
+    },
+    headerIcons: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    iconButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    iconText: {
+        fontFamily: "Albert Sans",
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: 'black',
+    },
+    questionRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    botAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#E8E8E8',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    botAvatarText: {
+        fontSize: 20,
     },
     questionContainer: {
-        backgroundColor: "#66621C",
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
-        borderBottomLeftRadius: 1,
-        borderBottomRightRadius: 12,
-        padding: 15,
-        alignSelf: "flex-start",
-        maxWidth: "80%",
+        backgroundColor: '#E8F4FD',
+        borderRadius: 20,
+        borderTopLeftRadius: 8,
+        padding: 16,
+        maxWidth: '75%',
     },
     questionText: {
         fontFamily: "Albert Sans",
-        fontSize: 18,
-        color: "#FEF4F6",
+        fontSize: 16,
+        color: "#333",
+        lineHeight: 22,
     },
-    answerWrapper: {
-        marginLeft: 20,
-        marginTop: 20,
-    },
-    answerContainer: {
-        backgroundColor: "#FFFEDD",
-        borderRadius: 12,
-        borderBottomRightRadius: 1,
-        padding: 20,
-        paddingTop: 40,
-        paddingBottom: 40,
-        alignSelf: "flex-start",
-        width: "100%",
-    },
-    answerText: {
-        fontFamily: "Albert Sans",
-        fontSize: 18,
-        color: "black",
-        textAlign: "center",
-    },
-    answerAgainContainer: {
-        alignItems: "flex-end",
-        marginTop: 8,
-    },
-    answerAgainButton: {
-        borderWidth: 1,
-        borderColor: "black",
-        borderRadius: 9999,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    answerAgainText: {
-        fontFamily: "Albert Sans",
-        fontSize: 22,
-        marginRight: 8,
-    },
-    actionButtonsContainer: {
-        flexDirection: "row",
-        justifyContent: "flex-end",
-        marginTop: 8,
+    actionButtonsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingLeft: 52,
         gap: 16,
     },
-    typeButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 9999,
-        backgroundColor: "#FEA3664D",
+    typeOutButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
-    speakButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 9999,
-        borderWidth: 1,
-        borderColor: "black",
+    narrateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
-    eraseButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 9999,
-        backgroundColor: "#FEA3664D",
-    },
-    nextButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 9999,
-        borderWidth: 1,
-        borderColor: "black",
+    speakerButton: {
+        padding: 4,
     },
     actionButtonText: {
         fontFamily: "Albert Sans",
-        fontSize: 22,
-        marginRight: 8,
+        fontSize: 14,
+        color: "#999",
+    },
+    answerRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        gap: 12,
+        marginBottom: 12,
+    },
+    answerContainer: {
+        backgroundColor: "#F0F8FF",
+        borderRadius: 20,
+        borderBottomRightRadius: 8,
+        padding: 16,
+        minHeight: 60,
+        maxWidth: '75%',
+        justifyContent: 'center',
+    },
+    answerText: {
+        fontFamily: "Albert Sans",
+        fontSize: 16,
+        color: "#333",
+        lineHeight: 22,
+    },
+    userAvatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#D2691E',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    userAvatarText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
     loadingContainer: {
         alignItems: "center",
@@ -686,6 +787,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 48,
         paddingVertical: 16,
         width: "60%",
+    },
+    disabledButton: {
+        backgroundColor: "#666666",
     },
     letsStartButtonContent: {
         flexDirection: "row",
@@ -746,4 +850,4 @@ const styles = StyleSheet.create({
     saveButtonText: {
         color: "white",
     },
-});
+})
